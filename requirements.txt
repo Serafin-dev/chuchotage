@@ -1,0 +1,18 @@
+# Django Stack
+Django==5.0
+channels==4.0.0
+daphne==4.0.0            # Servidor de interfaz ASGI
+channels-redis==4.1.0    # Backend para el Channel Layer (recomendado)
+
+# Entorno
+python-dotenv==1.0.0
+
+# Audio & API Clients (Igual que antes)
+deepgram-sdk==3.2.0
+groq==0.4.2
+elevenlabs==0.2.27
+numpy==1.26.2
+deepgram-sdk
+groq
+channels_redis
+daphne

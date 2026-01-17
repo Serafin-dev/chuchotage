@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chuchotage | Live Interpreter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #F3F4F6; }
+        
+        /* Animación para el estado "Grabando" */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .recording-pulse { animation: pulse-ring 2s infinite; }
+        
+        /* Scrollbar bonita para el chat */
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .chat-scroll::-webkit-scrollbar { width: 6px; }
+        .chat-scroll::-webkit-scrollbar-track { background: #f1f1f1; }
+        .chat-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+    <header class="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-6 shadow-sm z-10">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold">C</div>
+            <h1 class="text-xl font-bold text-gray-800 tracking-tight">Chuchotage <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full ml-1">BETA</span></h1>
+        </div>
+        <div id="connectionStatus" class="flex items-center gap-2 text-sm text-gray-500">
+            <span class="w-2.5 h-2.5 rounded-full bg-red-400" id="statusDot"></span>
+            <span id="statusText">Desconectado</span>
+        </div>
+    </header>
+
+    <main class="flex-1 flex relative">
+        
+        <aside class="w-80 bg-white border-r border-gray-200 flex flex-col z-20 shadow-lg">
+            
+            <div id="lobbyPanel" class="p-6 flex flex-col gap-5">
+                <h2 class="text-sm uppercase tracking-wide text-gray-500 font-bold mb-2">Configuración de Sala</h2>
+                
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">ID de Sala</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-hashtag absolute left-3 top-3 text-gray-400"></i>
+                        <input type="text" id="roomInput" value="daily" class="pl-9 w-full bg-gray-50 border border-gray-300 rounded-lg py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition" placeholder="Nombre de sala">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">🗣️ Yo Hablo</label>
+                        <select id="sourceLang" class="w-full bg-gray-50 border border-gray-300 rounded-lg py-2 text-sm focus:ring-indigo-500">
+                            <option value="es" selected>Español</option>
+                            <option value="en">Inglés</option>
+                            <option value="fr">Francés</option>
+                            <option value="de">Alemán</option>
+                            <option value="pt">Portugués</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">🎧 Yo Escucho</label>
+                        <select id="targetLang" class="w-full bg-gray-50 border border-gray-300 rounded-lg py-2 text-sm focus:ring-indigo-500">
+                            <option value="en" selected>Inglés</option>
+                            <option value="es">Español</option>
+                            <option value="fr">Francés</option>
+                            <option value="de">Alemán</option>
+                            <option value="pt">Portugués</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button id="btnConnect" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg shadow transition transform active:scale-95 flex justify-center items-center gap-2">
+                    <span>Unirse a Sala</span>
+                    <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            </div>
+
+            <div id="livePanel" class="p-6 flex flex-col gap-6 hidden flex-1">
+                
+                <div class="bg-gray-50 rounded-xl p-4 border border-gray-200 text-center">
+                    <p class="text-xs font-bold text-gray-500 uppercase mb-3">Tu Micrófono</p>
+                    
+                    <canvas id="micVisualizer" width="200" height="40" class="w-full h-10 mb-4 bg-gray-200 rounded"></canvas>
+
+                    <button id="btnToggleMic" class="w-16 h-16 rounded-full bg-gray-200 text-gray-500 text-2xl flex items-center justify-center mx-auto transition hover:bg-gray-300">
+                        <i class="fa-solid fa-microphone-slash"></i>
+                    </button>
+                    <p id="micStatusText" class="text-xs text-gray-400 mt-2">Click para hablar</p>
+                </div>
+
+                <div class="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
+                    <div class="flex justify-between items-center mb-2">
+                        <p class="text-xs font-bold text-indigo-500 uppercase">Volumen Traducción</p>
+                        <i class="fa-solid fa-volume-high text-indigo-400 text-xs"></i>
+                    </div>
+                    <input type="range" id="volumeSlider" min="0" max="1" step="0.1" value="1" class="w-full h-2 bg-indigo-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                </div>
+
+                <button id="btnDisconnect" class="mt-auto w-full border border-red-200 text-red-500 hover:bg-red-50 font-medium py-2 rounded-lg text-sm transition">
+                    Salir de Sala
+                </button>
+            </div>
+        </aside>
+
+        <section class="flex-1 bg-gray-100 flex flex-col relative">
+            <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 opacity-50 pointer-events-none">
+                <i class="fa-regular fa-comments text-6xl mb-4"></i>
+                <p class="text-lg font-medium">La conversación aparecerá aquí</p>
+            </div>
+
+            <div id="transcript" class="flex-1 overflow-y-auto p-6 space-y-4 chat-scroll pb-24">
+                </div>
+        </section>
+
+    </main>
+
+    <script>
+        // --- ESTADO Y DOM ---
+        let socket;
+        let mediaRecorder;
+        let audioContext;
+        let micAnalyser, micDataArray, micSource; // Para visualizer micrófono
+        let isRecording = false;
+        let audioQueue = [];
+        let isPlaying = false;
+        
+        // Elementos UI
+        const els = {
+            lobby: document.getElementById('lobbyPanel'),
+            live: document.getElementById('livePanel'),
+            statusDot: document.getElementById('statusDot'),
+            statusText: document.getElementById('statusText'),
+            btnConnect: document.getElementById('btnConnect'),
+            btnDisconnect: document.getElementById('btnDisconnect'),
+            btnToggleMic: document.getElementById('btnToggleMic'),
+            transcript: document.getElementById('transcript'),
+            micVisualizer: document.getElementById('micVisualizer'),
+            emptyState: document.getElementById('emptyState'),
+            micStatusText: document.getElementById('micStatusText'),
+            volumeSlider: document.getElementById('volumeSlider')
+        };
+
+        // --- 1. LÓGICA DE VISUALIZADOR (CANVAS) ---
+        function setupVisualizer(stream) {
+            const canvas = els.micVisualizer;
+            const ctx = canvas.getContext("2d");
+            
+            if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            micSource = audioContext.createMediaStreamSource(stream);
+            micAnalyser = audioContext.createAnalyser();
+            micAnalyser.fftSize = 64; // Bajo detalle para rendimiento
+            
+            micSource.connect(micAnalyser);
+            // No conectamos micAnalyser a destination para no escucharnos a nosotros mismos
+            
+            const bufferLength = micAnalyser.frequencyBinCount;
+            micDataArray = new Uint8Array(bufferLength);
+
+            function draw() {
+                if (!isRecording) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    return;
+                }
+                requestAnimationFrame(draw);
+                micAnalyser.getByteFrequencyData(micDataArray);
+
+                ctx.fillStyle = 'rgb(243, 244, 246)'; // Limpiar con color de fondo
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const barWidth = (canvas.width / bufferLength) * 2.5;
+                let barHeight;
+                let x = 0;
+
+                for(let i = 0; i < bufferLength; i++) {
+                    barHeight = micDataArray[i] / 2; 
+                    // Color dinámico (Indigo a Rojo si es muy fuerte)
+                    ctx.fillStyle = barHeight > 60 ? '#EF4444' : '#4F46E5'; 
+                    ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                    x += barWidth + 1;
+                }
+            }
+            draw();
+        }
+
+        // --- 2. WEBSOCKET & CONEXIÓN ---
+        els.btnConnect.onclick = () => {
+            const room = document.getElementById('roomInput').value.trim() || 'general';
+            const source = document.getElementById('sourceLang').value;
+            const target = document.getElementById('targetLang').value;
+
+            // UI Loading
+            els.btnConnect.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Conectando...';
+            
+            // WS Connection
+            // Ajustamos el puerto a 8000 explícitamente como acordamos
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = '127.0.0.1:8000'; // Forzamos local dev
+            const wsUrl = `${protocol}//${host}/ws/translator/${room}/?source=${source}&target=${target}`;
+
+            socket = new WebSocket(wsUrl);
+            socket.binaryType = 'arraybuffer';
+
+            socket.onopen = () => {
+                // Cambio de UI: Lobby -> Live
+                els.lobby.classList.add('hidden');
+                els.live.classList.remove('hidden');
+                els.statusDot.className = "w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse";
+                els.statusText.innerText = "En vivo";
+                els.statusText.classList.add("text-green-600", "font-medium");
+                
+                // Inicializar AudioContext (User gesture policy)
+                if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            };
+
+            socket.onmessage = handleMessage;
+            
+            socket.onclose = () => resetUI();
+            socket.onerror = (e) => { console.error(e); alert("Error de conexión"); resetUI(); };
+        };
+
+        els.btnDisconnect.onclick = () => {
+            if (socket) socket.close();
+            resetUI();
+        };
+
+        function resetUI() {
+            els.live.classList.add('hidden');
+            els.lobby.classList.remove('hidden');
+            els.statusDot.className = "w-2.5 h-2.5 rounded-full bg-red-400";
+            els.statusText.innerText = "Desconectado";
+            els.statusText.className = "";
+            els.btnConnect.innerHTML = 'Unirse a Sala <i class="fa-solid fa-arrow-right"></i>';
+            stopRecording();
+        }
+
+        // --- 3. MANEJO DE MENSAJES (Chat & Audio) ---
+        async function handleMessage(event) {
+            const data = event.data;
+
+            if (data instanceof ArrayBuffer) {
+                audioQueue.push(data);
+                playQueue();
+            } else {
+                try {
+                    const json = JSON.parse(data);
+                    if (json.type === 'transcription') addMessageToChat(json);
+                } catch (e) { console.error(e); }
+            }
+        }
+
+        // --- 4. UI DEL CHAT (Burbujas) ---
+        function addMessageToChat(data) {
+            els.emptyState.style.display = 'none';
+
+            const div = document.createElement('div');
+            // Diseño de tarjeta flotante
+            div.className = "bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-2 animate-[fadeIn_0.3s_ease-out]";
+            
+            // Banderas
+            const flags = { 'es': '🇪🇸', 'en': '🇺🇸', 'fr': '🇫🇷', 'de': '🇩🇪', 'pt': '🇧🇷' };
+            const flag = flags[data.lang] || '🌍';
+
+            div.innerHTML = `
+                <div class="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase">
+                    <span>${flag} ${data.lang}</span>
+                    <span class="flex-1 h-px bg-gray-100"></span>
+                    <span>${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                </div>
+                <div>
+                    <p class="text-gray-500 text-sm italic mb-1">"${data.text}"</p>
+                    ${data.translation ? `<p class="text-indigo-900 font-semibold text-lg leading-tight">${data.translation}</p>` : ''}
+                </div>
+            `;
+            
+            els.transcript.appendChild(div);
+            // Auto-scroll
+            els.transcript.scrollTo({ top: els.transcript.scrollHeight, behavior: 'smooth' });
+        }
+
+        // --- 5. AUDIO PLAYBACK (Con Volumen) ---
+        async function playQueue() {
+            if (isPlaying || audioQueue.length === 0) return;
+            isPlaying = true;
+            const audioData = audioQueue.shift();
+
+            try {
+                if (audioContext.state === 'suspended') await audioContext.resume();
+                
+                const buffer = await audioContext.decodeAudioData(audioData);
+                const source = audioContext.createBufferSource();
+                source.buffer = buffer;
+                
+                // Nodo de Ganancia (Volumen)
+                const gainNode = audioContext.createGain();
+                gainNode.gain.value = parseFloat(els.volumeSlider.value); // Leer slider
+                
+                source.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                // Acelerar si se acumulan mensajes (Catch-up)
+                if (audioQueue.length > 2) source.playbackRate.value = 1.2;
+
+                source.onended = () => { isPlaying = false; playQueue(); };
+                source.start(0);
+            } catch (e) {
+                console.error(e);
+                isPlaying = false;
+                playQueue();
+            }
+        }
+
+        // --- 6. MICRÓFONO (Visualizer + Stream) ---
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Configurar Visualizador
+                setupVisualizer(stream);
+
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0 && socket?.readyState === WebSocket.OPEN) {
+                        socket.send(e.data);
+                    }
+                };
+                mediaRecorder.start(200); // Chunks de 200ms
+                
+                isRecording = true;
+                
+                // UI Update
+                els.btnToggleMic.className = "w-16 h-16 rounded-full bg-red-500 text-white text-2xl flex items-center justify-center mx-auto transition shadow-lg recording-pulse";
+                els.btnToggleMic.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+                els.micStatusText.innerText = "Transmitiendo...";
+                els.micStatusText.className = "text-xs text-red-500 font-bold mt-2 animate-pulse";
+                
+            } catch (err) {
+                alert("No se pudo acceder al micrófono.");
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(t => t.stop());
+            }
+            isRecording = false;
+            
+            // UI Update
+            els.btnToggleMic.className = "w-16 h-16 rounded-full bg-gray-200 text-gray-500 text-2xl flex items-center justify-center mx-auto transition hover:bg-gray-300";
+            els.btnToggleMic.innerHTML = '<i class="fa-solid fa-microphone-slash"></i>';
+            els.micStatusText.innerText = "Click para hablar";
+            els.micStatusText.className = "text-xs text-gray-400 mt-2";
+            
+            // Limpiar canvas
+            const canvas = els.micVisualizer;
+            const ctx = canvas.getContext("2d");
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        els.btnToggleMic.onclick = () => {
+            if (!isRecording) startRecording();
+            else stopRecording();
+        };
+        
+        // Ajuste dinámico de volumen en tiempo real
+        els.volumeSlider.oninput = (e) => {
+            // Afectará al próximo audio que se reproduzca
+            console.log("Volumen ajustado a:", e.target.value);
+        };
+
+    </script>
+</body>
+</html>
