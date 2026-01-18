@@ -202,8 +202,12 @@
             // WS Connection
             // Ajustamos el puerto a 8000 explícitamente como acordamos
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = '127.0.0.1:8000'; // Forzamos local dev
+            // Detecta el dominio actual (ej: chuchotage.railway.app o localhost:8000)
+            const host = window.location.host; 
+            
             const wsUrl = `${protocol}//${host}/ws/translator/${room}/?source=${source}&target=${target}`;
+            
+            console.log("Conectando a:", wsUrl); // Debug para ver la magia
 
             socket = new WebSocket(wsUrl);
             socket.binaryType = 'arraybuffer';
