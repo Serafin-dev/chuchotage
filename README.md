@@ -79,6 +79,7 @@ make clean
 - **backend/**: Main Django project settings and ASGI config.
 - **translator/**: Core application logic.
   - `consumers.py`: Handles WebSocket connections and real-time processing chain (STT -> Translation -> TTS).
+  - `audio_service.py`: Service for Speech-to-Text and Text-to-Speech via Deepgram.
   - `translation_service.py`: Service for handling translations via Groq.
   - `templates/`: Contains the frontend `index.html`.
 - **docker-compose.yml**: Configuration for the Redis service.
