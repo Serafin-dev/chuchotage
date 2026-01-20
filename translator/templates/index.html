@@ -203,7 +203,7 @@
             // Ajustamos el puerto a 8000 explícitamente como acordamos
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             // Detecta el dominio actual (ej: chuchotage.railway.app o localhost:8000)
-            const host = window.location.host; 
+            const host = window.location.host;
             
             const wsUrl = `${protocol}//${host}/ws/translator/${room}/?source=${source}&target=${target}`;
             
@@ -322,51 +322,91 @@
         }
 
         // --- 6. MICRÓFONO (Visualizer + Stream) ---
+
+// --- 6. MICRÓFONO (Visualizer + Stream + Control Signals) ---
+
         async function startRecording() {
             try {
+                console.log("Requesting microphone access...");
+                // 1. PRIORIDAD: Obtener acceso al hardware local.
+                // Esto disparará el prompt del navegador si es la primera vez.
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                
-                // Configurar Visualizador
-                setupVisualizer(stream);
+                console.log("Microphone access granted.");
 
+                // Si llegamos aquí, el usuario aceptó.
+
+                // Setup componentes de audio
+                setupVisualizer(stream);
                 mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+
                 mediaRecorder.ondataavailable = (e) => {
+                    // Solo enviamos datos si el socket está abierto
                     if (e.data.size > 0 && socket?.readyState === WebSocket.OPEN) {
                         socket.send(e.data);
                     }
                 };
-                mediaRecorder.start(200); // Chunks de 200ms
-                
+
+                // 2. ACTUALIZAR UI AHORA (Feedback inmediato)
                 isRecording = true;
-                
-                // UI Update
                 els.btnToggleMic.className = "w-16 h-16 rounded-full bg-red-500 text-white text-2xl flex items-center justify-center mx-auto transition shadow-lg recording-pulse";
                 els.btnToggleMic.innerHTML = '<i class="fa-solid fa-microphone"></i>';
                 els.micStatusText.innerText = "Transmitiendo...";
                 els.micStatusText.className = "text-xs text-red-500 font-bold mt-2 animate-pulse";
-                
+
+                // 3. AVISAR AL BACKEND (Señal de control)
+                // Hacemos esto justo antes de empezar a mandar datos.
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    console.log("🎤 Enviando señal de inicio al backend (start_mic)...");
+                    socket.send(JSON.stringify({ type: 'control', action: 'start_mic' }));
+                } else {
+                    // Si el socket no está listo, logueamos un error grave, pero la UI local ya respondió.
+                    console.error("⚠️ CRÍTICO: Micrófono iniciado localmente, pero el WebSocket NO está conectado. El audio no llegará al servidor.");
+                    // Opcional: Podrías mostrar una alerta visual aquí si lo prefieres.
+                }
+
+                // 4. Iniciamos el flujo de datos (chunks de 200ms)
+                mediaRecorder.start(200);
+
             } catch (err) {
-                alert("No se pudo acceder al micrófono.");
+                console.error("Error al acceder al micrófono (o denegado):", err);
+                alert("No se pudo acceder al micrófono. Verifique los permisos del navegador.");
+                
+                // Si falló, nos aseguramos que la UI y el estado interno queden limpios.
+                if (isRecording) {
+                    stopRecording();
+                }
             }
         }
 
         function stopRecording() {
+            // 1. DETENER GRABACIÓN LOCAL
             if (mediaRecorder && mediaRecorder.state !== 'inactive') {
                 mediaRecorder.stop();
+                // Detener tracks para apagar la luz de "En uso" del navegador
                 mediaRecorder.stream.getTracks().forEach(t => t.stop());
             }
+            
+            // 2. AVISAR AL BACKEND: "CIERRA EL OÍDO" (NUEVO)
+            // Esto es crucial para que Deepgram deje de esperar audio y no de timeout
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                console.log("🛑 Enviando señal de parada al backend...");
+                socket.send(JSON.stringify({ type: 'control', action: 'stop_mic' }));
+            }
+            
             isRecording = false;
             
-            // UI Update
+            // 3. UI UPDATE (Estado Inactivo)
             els.btnToggleMic.className = "w-16 h-16 rounded-full bg-gray-200 text-gray-500 text-2xl flex items-center justify-center mx-auto transition hover:bg-gray-300";
             els.btnToggleMic.innerHTML = '<i class="fa-solid fa-microphone-slash"></i>';
             els.micStatusText.innerText = "Click para hablar";
             els.micStatusText.className = "text-xs text-gray-400 mt-2";
             
-            // Limpiar canvas
+            // Limpiar canvas del visualizador
             const canvas = els.micVisualizer;
-            const ctx = canvas.getContext("2d");
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (canvas) {
+                const ctx = canvas.getContext("2d");
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
         }
 
         els.btnToggleMic.onclick = () => {

@@ -28,24 +28,35 @@ class TranslatorConsumer(AsyncWebsocketConsumer):
         dg_connection (Any): The active Deepgram Live connection.
     """
 
+    def _start_deepgram_connection(self):
+        """Helper to start Deepgram Live connection."""
+        if self.dg_connection:
+            return # Ya existe, no hacer nada
+
+        logger.info("🎤 Starting Deepgram Connection...")
+        self.dg_connection = self.audio_service.create_live_transcription_connection(
+            source_lang=self.source_lang,
+            on_message_callback=self._on_speech_transcript,
+            on_error_callback=self._on_speech_error
+        )
+
+    def _stop_deepgram_connection(self):
+        """Helper to finish Deepgram Live connection."""
+        if self.dg_connection:
+            logger.info("🛑 Stopping Deepgram Connection...")
+            try:
+                self.dg_connection.finish()
+            except Exception:
+                pass
+            self.dg_connection = None
+
     async def connect(self) -> None:
-        """Handles the WebSocket connection event.
-
-        Parses query parameters, joins the channel group, initializes services,
-        and establishes the connection to the STT service.
-
-        """
+        """Handles the WebSocket connection event."""
         try:
-            # 1. Parse Parameters
             self._parse_query_params()
             
-            # 2. Join Group
-            # We join a single global group for the room. Everyone routes/translates locally.
             self.room_group_name = f"room_{self.room_name}_global"
-            logger.info(
-                "🔗 Connected to Room: %s | Source: %s -> Target: %s",
-                self.room_group_name, self.source_lang, self.target_lang
-            )
+            logger.info("🔗 Connected to Room: %s", self.room_group_name)
 
             await self.channel_layer.group_add(
                 self.room_group_name,
@@ -53,21 +64,14 @@ class TranslatorConsumer(AsyncWebsocketConsumer):
             )
             await self.accept()
 
-            # 3. Initialize Services
+            # Initialize Services
             self.app_loop = asyncio.get_running_loop()
             self.translator = TranslationService()
             self.audio_service = AudioService()
-
-            # 4. Setup Deepgram STT
-            self.dg_connection = self.audio_service.create_live_transcription_connection(
-                source_lang=self.source_lang,
-                on_message_callback=self._on_speech_transcript,
-                on_error_callback=self._on_speech_error
-            )
-
-            if not self.dg_connection:
-                logger.error("Failed to establish Deepgram connection. Closing WebSocket.")
-                await self.close()
+            
+            # 🛑 CAMBIO: YA NO INICIAMOS DEEPGRAM AQUÍ AUTOMÁTICAMENTE
+            # self.dg_connection se iniciará cuando llegue la señal 'start_mic'
+            self.dg_connection = None 
 
         except Exception as e:
             logger.error("❌ Error during connection: %s", e)
@@ -95,17 +99,29 @@ class TranslatorConsumer(AsyncWebsocketConsumer):
             await self.translator.close()
 
     async def receive(self, text_data: Optional[str] = None, bytes_data: Optional[bytes] = None) -> None:
-        """Handles incoming data from the WebSocket.
+        """Handles incoming data from the WebSocket."""
+        
+        # 1. MANEJO DE SEÑALES DE CONTROL (JSON)
+        if text_data:
+            try:
+                data = json.loads(text_data)
+                if data.get('type') == 'control':
+                    action = data.get('action')
+                    if action == 'start_mic':
+                        self._start_deepgram_connection()
+                    elif action == 'stop_mic':
+                        self._stop_deepgram_connection()
+            except json.JSONDecodeError:
+                pass
 
-        Forwards binary audio data to the Deepgram connection.
-
-        Args:
-            text_data (Optional[str]): Text data received (unused).
-            bytes_data (Optional[bytes]): Binary data (audio) received.
-
-        """
+        # 2. MANEJO DE AUDIO (BYTES)
+        # Solo enviamos si la conexión existe y está activa
         if bytes_data and hasattr(self, 'dg_connection') and self.dg_connection:
-            self.dg_connection.send(bytes_data)
+            try:
+                self.dg_connection.send(bytes_data)
+            except Exception as e:
+                logger.error("Error sending to Deepgram (Connection might be closed): %s", e)
+                # Opcional: Intentar reconectar automáticamente aquí
 
     def _on_speech_transcript(self, connection: Any, result: Any, **kwargs: Any) -> None:
         """Callback for Deepgram transcription events.
